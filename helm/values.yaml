@@ -1,0 +1,107 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MLflow Helm values — Production on AWS EKS
+# Chart: community-charts/mlflow
+#
+# RDS:  database = mlflow_abhi   user = mlflow_abhi
+# S3:   bucket   = dvc-abhi-test  path = mlflow-artifacts
+#
+# Deploy:   bash helm/provision.sh   (first run)
+#           bash helm/deploy.sh      (subsequent runs)
+# ─────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 2                       # HA: 2 pods across EKS nodes
+
+# ── Backend store: AWS RDS PostgreSQL ─────────────────────────────────────────
+backendStore:
+  databaseMigration: true             # run alembic migrations on first boot
+  databaseConnectionCheck: true       # init container waits for DB ready
+
+  postgres:
+    enabled: true
+    host: ""                          # injected at deploy time by helm/deploy.sh
+    port: 5432
+    database: "mlflow_abhi"           # RDS database name
+    user: "mlflow_abhi"               # RDS master user
+    password: ""                      # left blank — pulled from existingDatabaseSecret
+
+  # Pulls DB credentials from k8s Secret created by helm/create-secrets.sh
+  existingDatabaseSecret:
+    name: "mlflow-db-secret"
+    usernameKey: "username"
+    passwordKey: "password"
+
+# ── Artifact store: AWS S3 ────────────────────────────────────────────────────
+artifactRoot:
+  proxiedArtifactStorage: false
+  s3:
+    enabled: true
+    bucket: "dvc-abhi-test"
+    path: "mlflow-artifacts"
+    # Pulls AWS keys from k8s Secret created by helm/create-secrets.sh
+    existingSecret:
+      name: "mlflow-s3-secret"
+      keyOfAccessKeyId: "AWS_ACCESS_KEY_ID"
+      keyOfSecretAccessKey: "AWS_SECRET_ACCESS_KEY"
+
+extraEnvVars:
+  AWS_DEFAULT_REGION: "ap-south-1"
+  # Allow gunicorn to trust forwarded IPs from the AWS ELB/NLB.
+  GUNICORN_CMD_ARGS: "--forwarded-allow-ips=*"
+
+# ── Extra CLI args passed directly to `mlflow server` ────────────────────────
+# --allowed-hosts=* disables the DNS-rebinding protection that rejects ELB hostnames.
+# The env var MLFLOW_ALLOWED_HOSTS is not read by this MLflow version; the CLI
+# flag is required. Chart schema requires a map, not a list.
+extraArgs:
+  allowed-hosts: "*"
+
+# ── Service: AWS NLB LoadBalancer (EKS auto-provisions it) ───────────────────
+service:
+  enabled: true
+  type: LoadBalancer
+  port: 80
+  containerPort: 5000
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+# ── Ingress (optional — enable for custom domain + TLS) ──────────────────────
+ingress:
+  enabled: false
+  # className: alb
+  # annotations:
+  #   kubernetes.io/ingress.class: alb
+  #   alb.ingress.kubernetes.io/scheme: internet-facing
+  # hosts:
+  #   - host: mlflow.yourdomain.com
+  #     paths:
+  #       - path: /
+  #         pathType: Prefix
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

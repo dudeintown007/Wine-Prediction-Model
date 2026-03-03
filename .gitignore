@@ -1,1 +1,40 @@
+# ── Data (tracked by DVC, not git) ───────────────────────────────────────────
 data/wine_sample.csv
+
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+mlruns/               # local MLflow tracking — use the server instead
+
+# ── Terraform ─────────────────────────────────────────────────────────────────
+.terraform/           # downloaded providers + modules (large, auto-generated)
+**/.terraform/
+.terraform.lock.hcl   # lock file is safe to commit but we exclude to avoid noise
+**/.terraform.lock.hcl
+*.tfstate             # state files may contain secrets — stored in S3 backend
+*.tfstate.backup
+*.tfvars              # may contain passwords — use secrets-bootstrap.sh instead
+tfplan                # binary plan output — may contain sensitive values
+**/tfplan
+
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+kubeconfig
+kubeconfig.*
+.kube/
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
